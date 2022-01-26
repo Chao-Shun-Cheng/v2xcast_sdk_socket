@@ -14,8 +14,8 @@
 
 #ifndef IPC_H
 #define IPC_H
-#define CLIENT_SOCK_FILE "client.sock"
-#define SERVER_SOCK_FILE "server.sock"
+#define CLIENT_SOCK_FILE "/tmp/client.sock"
+#define SERVER_SOCK_FILE "/tmp/server.sock"
 #endif
 
 #define RX_MAX 1460U
@@ -27,7 +27,6 @@ typedef enum app_thread_type { APP_THREAD_TX = 0, APP_THREAD_RX = 1 } app_thread
 bool app_running = true;
 char app_sigaltstack[SIGSTKSZ];
 int sock = -1;
-int asock = -1;
 
 static void *receiver_handler(void *args);
 static void *sender_handler(void *args);
@@ -114,7 +113,7 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-int getConnect(int *sock, int *asock)
+int getConnect(int *sock)
 {
     struct sockaddr_un addr;
     socklen_t len;
@@ -124,7 +123,7 @@ int getConnect(int *sock, int *asock)
         return -1;
     }
 
-    memset(&addr, 0, sizeof(struct sockaddr_un));
+    memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
     strcpy(addr.sun_path, SERVER_SOCK_FILE);
     unlink(SERVER_SOCK_FILE);
@@ -132,20 +131,7 @@ int getConnect(int *sock, int *asock)
         perror("bind");
         return -1;
     }
-    if (listen(*sock, 5) == -1) {
-        perror("listen");
-        return -1;
-    }
-
-    printf("Ready for client connect().\n");
-
-    *asock = accept(*sock, NULL, NULL);
-    if (*asock < 0) {
-        perror("accept() failed");
-        return -1;
-    }
-
-    return 0;
+    return 1;
 }
 
 static int32_t app_set_thread_name_and_priority(pthread_t thread, app_thread_type_t type, char *p_name, int32_t priority)
@@ -207,12 +193,10 @@ void app_signal_handler(int sig_num)
 {
     if (sig_num == SIGINT) {
         printf("SIGINT signal!\n");
-        close(asock);
         close(sock);
     }
     if (sig_num == SIGTERM) {
         printf("SIGTERM signal!\n");
-        close(asock);
         close(sock);
     }
     app_running = false;
@@ -257,7 +241,7 @@ static void *receiver_handler(void *args)
     uint8_t rx_buf[RX_MAX];
     size_t len;
     int ret;
-    if (getConnect(&sock, &asock) > 0) {
+    if (getConnect(&sock) > 0) {
         printf("get connect.\n");
     } else {
         pthread_exit(NULL);
@@ -268,7 +252,7 @@ static void *receiver_handler(void *args)
         ret = dsrc_caster_rx(*caster_handler, &rx_info, rx_buf, &len);
         if (IS_SUCCESS(ret)) {
             printf("Received %zu bytes!\n", len);
-            if (send(asock, (char*) rx_buf, len, 0) < 0) {
+            if (send(sock, (char *) rx_buf, (int) len, 0) < 0) {
                 perror("send() failed");
                 break;
             } else {
@@ -294,9 +278,9 @@ static void *sender_handler(void *args)
 {
     caster_handler_t *caster_handler = (caster_handler_t *) args;
     char *tx_buf = NULL;
-    int tx_buf_len = 0;
+    int tx_buf_len = 112;
     int ret;
-    if (getConnect(&sock, &asock) > 0) {
+    if (getConnect(&sock) > 0) {
         printf("get connect.\n");
     } else {
         pthread_exit(NULL);
@@ -304,14 +288,14 @@ static void *sender_handler(void *args)
 
     while (app_running) {
         printf("-----------------------\n");
-        int len = 1460;
-        if (recv(asock, tx_buf, len, 0) < 0) {
+        char data[tx_buf_len];
+        if (recv(sock, data, tx_buf_len, 0) < 0) {
             perror("recv() failed");
             break;
         } else {
             printf("Receive message from ROS\n");
         }
-        tx_buf_len = strlen(tx_buf);
+        tx_buf = &data;
         ret = dsrc_caster_tx(*caster_handler, NULL, (uint8_t *) tx_buf, (size_t) tx_buf_len);
 
         if (IS_SUCCESS(ret)) {
