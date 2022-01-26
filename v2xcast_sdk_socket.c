@@ -268,7 +268,7 @@ static void *receiver_handler(void *args)
         ret = dsrc_caster_rx(*caster_handler, &rx_info, rx_buf, &len);
         if (IS_SUCCESS(ret)) {
             printf("Received %zu bytes!\n", len);
-            if (send(asock, rx_buf, len, 0) < 0) {
+            if (send(asock, (char*) rx_buf, len, 0) < 0) {
                 perror("send() failed");
                 break;
             } else {
@@ -293,7 +293,7 @@ static void *receiver_handler(void *args)
 static void *sender_handler(void *args)
 {
     caster_handler_t *caster_handler = (caster_handler_t *) args;
-    uint8_t *tx_buf = NULL;
+    char *tx_buf = NULL;
     int tx_buf_len = 0;
     int ret;
     if (getConnect(&sock, &asock) > 0) {
@@ -304,14 +304,15 @@ static void *sender_handler(void *args)
 
     while (app_running) {
         printf("-----------------------\n");
-        if (recv(asock, tx_buf, tx_buf_len, 0) < 0) {
+        int len = 1460;
+        if (recv(asock, tx_buf, len, 0) < 0) {
             perror("recv() failed");
             break;
         } else {
             printf("Receive message from ROS\n");
         }
-
-        ret = dsrc_caster_tx(*caster_handler, NULL, tx_buf, (size_t) tx_buf_len);
+        tx_buf_len = strlen(tx_buf);
+        ret = dsrc_caster_tx(*caster_handler, NULL, (uint8_t *) tx_buf, (size_t) tx_buf_len);
 
         if (IS_SUCCESS(ret)) {
             printf("Transmitted %zu bytes!\n", tx_buf_len);
