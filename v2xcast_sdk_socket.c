@@ -28,6 +28,7 @@ bool app_running = true;
 char app_sigaltstack[SIGSTKSZ];
 int sock = -1;
 
+int getConnect(int *sock, app_thread_type_t type);
 static void *receiver_handler(void *args);
 static void *sender_handler(void *args);
 static int32_t app_set_thread_name_and_priority(pthread_t thread, app_thread_type_t type, char *p_name, int32_t priority);
@@ -113,27 +114,6 @@ int main(int argc, char *argv[])
     return 0;
 }
 
-int getConnect(int *sock)
-{
-    struct sockaddr_un addr;
-    socklen_t len;
-
-    if ((*sock = socket(PF_UNIX, SOCK_DGRAM, 0)) < 0) {
-        perror("socket");
-        return -1;
-    }
-
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strcpy(addr.sun_path, SERVER_SOCK_FILE);
-    unlink(SERVER_SOCK_FILE);
-    if (bind(*sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
-        perror("bind");
-        return -1;
-    }
-    return 1;
-}
-
 static int32_t app_set_thread_name_and_priority(pthread_t thread, app_thread_type_t type, char *p_name, int32_t priority)
 {
     int32_t result;
@@ -194,10 +174,14 @@ void app_signal_handler(int sig_num)
     if (sig_num == SIGINT) {
         printf("SIGINT signal!\n");
         close(sock);
+        unlink(SERVER_SOCK_FILE);
+        unlink(CLIENT_SOCK_FILE);
     }
     if (sig_num == SIGTERM) {
         printf("SIGTERM signal!\n");
         close(sock);
+        unlink(SERVER_SOCK_FILE);
+        unlink(CLIENT_SOCK_FILE);
     }
     app_running = false;
 }
@@ -241,7 +225,7 @@ static void *receiver_handler(void *args)
     uint8_t rx_buf[RX_MAX];
     size_t len;
     int ret;
-    if (getConnect(&sock) > 0) {
+    if (getConnect(&sock, APP_THREAD_RX) > 0) {
         printf("get connect.\n");
     } else {
         pthread_exit(NULL);
@@ -280,7 +264,7 @@ static void *sender_handler(void *args)
     char *tx_buf = NULL;
     int tx_buf_len = 112;
     int ret;
-    if (getConnect(&sock) > 0) {
+    if (getConnect(&sock, APP_THREAD_TX) > 0) {
         printf("get connect.\n");
     } else {
         pthread_exit(NULL);
@@ -307,4 +291,37 @@ static void *sender_handler(void *args)
         sleep(1);
     }
     pthread_exit(NULL);
+}
+
+int getConnect(int *sock, app_thread_type_t type)
+{
+    struct sockaddr_un addr;
+    socklen_t len;
+
+    if ((*sock = socket(PF_UNIX, SOCK_DGRAM, 0)) < 0) {
+        perror("socket");
+        return -1;
+    } else {
+        printf("socket suceess\n");
+    }
+
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strcpy(addr.sun_path, SERVER_SOCK_FILE);
+    
+    if(APP_THREAD_RX == type) {
+        if (connect(*sock, (struct sockaddr *)&addr, sizeof(addr)) == -1) {
+			perror("connect");
+			return -1;
+		}
+    }
+    else if(APP_THREAD_TX == type) {
+        // unlink(SERVER_SOCK_FILE);
+        if (bind(*sock, (struct sockaddr *) &addr, sizeof(addr)) < 0) {
+            perror("bind");
+            return -1;
+        }
+    }
+    
+    return 1;
 }
