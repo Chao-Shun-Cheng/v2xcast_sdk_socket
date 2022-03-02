@@ -288,7 +288,6 @@ static void *sender_handler(void *args)
             printf("Failed to transmit data, err code is:%d, msg = %s\n", ret, ERROR_MSG(ret));
         }
         fflush(stdout);
-        sleep(1);
     }
     pthread_exit(NULL);
 }
